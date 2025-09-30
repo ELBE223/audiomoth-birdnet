@@ -1,9 +1,19 @@
+# Python
 __pycache__/
 *.pyc
 .venv/
 env/
+!env/requirements.txt
+
+# Jupyter
 .ipynb_checkpoints/
+
+# macOS
 .DS_Store
+
+# VS Code
 .vscode/
+
+# Data & outputs
 results/
 data/raw/
