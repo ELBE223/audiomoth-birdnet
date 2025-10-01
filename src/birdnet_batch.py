@@ -27,7 +27,7 @@ def find_audio_files(base: Path, pattern: str | None) -> List[Path]:
     return out
 
 def analyze_one_to_csv(file_path: Path, out_dir: Path, min_conf: float = 0.1) -> Path:
-    """Analyze one file and write a CSV into results/<parent>/<file>.csv"""
+    """Analyze one file and write CSV -> results/<parent>/<file>.csv"""
     from birdnetlib import Recording
     from birdnetlib.analyzer import Analyzer
 
@@ -56,9 +56,8 @@ def analyze_one_to_csv(file_path: Path, out_dir: Path, min_conf: float = 0.1) ->
 
 def analyze_batch_to_csv(files: Iterable[Path], out_dir: Path,
                          min_conf: float = 0.1, workers: int = 1) -> list[Path]:
-    """Analyze many files in parallel; write per-file CSVs."""
+    """Parallel batch (no progress)."""
     from multiprocessing import Pool
-
     files = list(files)
     args = [(Path(f), Path(out_dir), float(min_conf)) for f in files]
 
@@ -86,10 +85,40 @@ def compile_master_csv(out_dir: Path, master_name: str = "master_results.csv") -
                     first = next(reader)
                 except StopIteration:
                     continue
-                # write first row if not header
                 if [x.strip().lower() for x in first] != [x.lower() for x in CSV_HEADER]:
                     w.writerow(first)
                 for row in reader:
                     if row:
                         w.writerow(row)
     return master
+
+# ---------- NEW: tqdm-friendly, macOS/Jupyter-safe batch with progress ----------
+
+def _worker_analyze(args):
+    """Top-level worker (importable). Required for spawn on macOS/Jupyter."""
+    f, outdir, conf = args
+    return analyze_one_to_csv(f, outdir, conf)
+
+def analyze_batch_with_progress(files: Iterable[Path], out_dir: Path,
+                                min_conf: float = 0.1, workers: int = 1) -> list[Path]:
+    """Batch with tqdm progress. Uses Pool if workers>1, else serial."""
+    from multiprocessing import Pool
+    from tqdm import tqdm
+
+    files = list(files)
+    args = [(Path(f), Path(out_dir), float(min_conf)) for f in files]
+
+    # Serial path (safe everywhere)
+    if workers <= 1:
+        out: list[Path] = []
+        for a in tqdm(args, total=len(args), desc="Analyzing", unit="file"):
+            out.append(_worker_analyze(a))
+        return out
+
+    # Parallel path (macOS/Jupyter-safe thanks to top-level worker)
+    out: list[Path] = []
+    with Pool(processes=workers) as pool:
+        for p in tqdm(pool.imap_unordered(_worker_analyze, args),
+                      total=len(args), desc="Analyzing", unit="file"):
+            out.append(p)
+    return out
